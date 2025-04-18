@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Text, View, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Platform, FlatList, Image } from 'react-native';
+import { Text, View, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Platform, FlatList, Image, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
+import { getRoute, updateBusLocation, subscribeToAttendance, getBusInfo, debugAttendanceData } from '../services/shuttleService';
 
 // Conditionally import map components to avoid web errors
 let MapView, Marker, Polyline, PROVIDER_GOOGLE;
@@ -18,138 +19,147 @@ export default function DriverPage() {
   const router = useRouter();
   const [currentTab, setCurrentTab] = useState('route');
   const [isNativePlatform, setIsNativePlatform] = useState(false);
-  const [selectedRoute, setSelectedRoute] = useState(0);
+  const [route, setRoute] = useState(null);
+  const [busInfo, setBusInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [attendanceList, setAttendanceList] = useState([]);
+  const [driverId, setDriverId] = useState('driver1'); // This would come from authentication
   
-  useEffect(() => {
-    // Check if running on native platform
-    setIsNativePlatform(Platform.OS !== 'web');
-  }, []);
-  
-  // Mock data for driver routes
-  const routes = [
-    { 
-      id: 1, 
-      name: 'Route A', 
-      description: 'Main Campus → Dorms',
-      stops: [
-        { name: 'Main Campus', address: '123 University Ave', time: '7:30 AM', students: 8 },
-        { name: 'Library', address: '456 Book St', time: '7:45 AM', students: 5 },
-        { name: 'Dorms', address: '789 Residence Rd', time: '8:00 AM', students: 0 }
-      ],
-      coordinates: [
-        { latitude: 37.78825, longitude: -122.4324 },
-        { latitude: 37.78625, longitude: -122.4344 },
-        { latitude: 37.78425, longitude: -122.4354 }
-      ]
-    },
-    { 
-      id: 2, 
-      name: 'Route B', 
-      description: 'Library → Sports Complex',
-      stops: [
-        { name: 'Library', address: '456 Book St', time: '8:00 AM', students: 4 },
-        { name: 'Student Center', address: '555 Center Ave', time: '8:15 AM', students: 7 },
-        { name: 'Sports Complex', address: '999 Athletic Dr', time: '8:30 AM', students: 2 }
-      ],
-      coordinates: [
-        { latitude: 37.78625, longitude: -122.4344 },
-        { latitude: 37.78525, longitude: -122.4304 },
-        { latitude: 37.78325, longitude: -122.4264 }
-      ]
-    }
-  ];
-
-  // Mock data for students
-  const students = [
-    { id: 1, name: 'Emma Johnson', studentId: 'S12345', pickupLocation: 'Main Campus', confirmed: true },
-    { id: 2, name: 'Noah Smith', studentId: 'S12346', pickupLocation: 'Main Campus', confirmed: true },
-    { id: 3, name: 'Olivia Williams', studentId: 'S12347', pickupLocation: 'Main Campus', confirmed: false },
-    { id: 4, name: 'Liam Brown', studentId: 'S12348', pickupLocation: 'Library', confirmed: true },
-    { id: 5, name: 'Ava Jones', studentId: 'S12349', pickupLocation: 'Library', confirmed: true },
-    { id: 6, name: 'Lucas Miller', studentId: 'S12350', pickupLocation: 'Student Center', confirmed: true },
-    { id: 7, name: 'Sophia Davis', studentId: 'S12351', pickupLocation: 'Sports Complex', confirmed: false },
-  ];
-
   // Driver's current location (simulated)
   const driverLocation = { latitude: 37.78825, longitude: -122.4324 };
 
-  // Filter students by the selected route and stop
-  const getStudentsByStop = (stopName) => {
-    return students.filter(student => student.pickupLocation === stopName);
-  };
-
-  // Web-friendly map placeholder
-  const WebMapPlaceholder = () => (
-    <View style={styles.webMapPlaceholder}>
-      <Text style={styles.mapPlaceholder}>Driver Route Map (Web Version)</Text>
-      <View style={styles.webMapIconsContainer}>
-        <View style={styles.webMapIcon}>
+  useEffect(() => {
+    // Check if running on native platform
+    setIsNativePlatform(Platform.OS !== 'web');
+    
+    // Load route and bus info
+    const loadData = async () => {
+      try {
+        // Load route data
+        const routeData = await getRoute();
+        setRoute(routeData);
+        
+        // Get bus info
+        const bus = await getBusInfo();
+        setBusInfo(bus);
+        
+        setLoading(false);
+      } catch (error) {
+        console.error("Error loading data:", error);
+        setLoading(false);
+      }
+    };
+    
+    loadData();
+    
+    // Set up attendance subscription
+    const unsubscribe = subscribeToAttendance((attendance) => {
+      console.log(`Received attendance update: ${JSON.stringify(attendance)}`);
+      setAttendanceList(attendance);
+    });
+    
+    // Debug attendance data
+    debugAttendanceData()
+      .then(() => console.log("Attendance debug complete"))
+      .catch(error => console.error("Error debugging attendance:", error));
+    
+    // Location update interval for the bus
+    let locationInterval = null;
+    
+    if (isNativePlatform && busInfo?.id) {
+      // In a real app, you would use the Geolocation API to get the actual location
+      locationInterval = setInterval(() => {
+        try {
+          // Simulate movement by slightly adjusting coordinates
+          const newLocation = {
+            latitude: driverLocation.latitude + (Math.random() * 0.0001 - 0.00005),
+            longitude: driverLocation.longitude + (Math.random() * 0.0001 - 0.00005)
+          };
+          
+          // Update bus location in Firebase
+          updateBusLocation(busInfo.id, newLocation);
+        } catch (error) {
+          console.error("Error updating location:", error);
+        }
+      }, 10000); // Update every 10 seconds
+    }
+    
+    // Clean up subscriptions
+    return () => {
+      unsubscribe();
+      if (locationInterval) clearInterval(locationInterval);
+    };
+  }, [isNativePlatform, busInfo?.id]);
+  
+  // Native map component (update for single route)
+  const NativeMap = () => {
+    // Safety check - only render if route data is available
+    if (!route) {
+      return (
+        <View style={[styles.map, {justifyContent: 'center', alignItems: 'center'}]}>
+          <ActivityIndicator size="large" color="#34c759" />
+          <Text style={{marginTop: 10}}>Loading map data...</Text>
+        </View>
+      );
+    }
+    
+    return (
+      <MapView
+        style={styles.map}
+        initialRegion={{
+          latitude: driverLocation.latitude,
+          longitude: driverLocation.longitude,
+          latitudeDelta: 0.015,
+          longitudeDelta: 0.0121,
+        }}
+      >
+        {/* Driver/Bus marker */}
+        <Marker
+          coordinate={driverLocation}
+          title="Your Location"
+          description="You are here"
+        >
           <View style={styles.driverMarker}>
             <Ionicons name="bus" size={18} color="white" />
           </View>
-          <Text style={styles.webMapIconLabel}>You</Text>
-        </View>
-        <View style={styles.webMapIcon}>
-          <View style={styles.stopMarker}>
-            <Ionicons name="location" size={18} color="white" />
-          </View>
-          <Text style={styles.webMapIconLabel}>Stop</Text>
-        </View>
-      </View>
-      <Text style={styles.webMapNote}>
-        Note: The interactive map is available on mobile devices.
-      </Text>
-    </View>
-  );
+        </Marker>
+        
+        {/* Route stops markers */}
+        {route.stops && route.stops.map((stop, index) => {
+          return (
+            <Marker
+              key={index}
+              coordinate={route.coordinates[index] || stop.location}
+              title={stop.name}
+              description={`${stop.scheduledTime} - ${stop.students} students`}
+            >
+              <View style={styles.stopMarker}>
+                <Ionicons name="location" size={18} color="white" />
+                <Text style={styles.markerCount}>{stop.students || 0}</Text>
+              </View>
+            </Marker>
+          );
+        })}
+        
+        {/* Route line */}
+        <Polyline
+          coordinates={route.coordinates || []}
+          strokeWidth={4}
+          strokeColor="#4a80f5"
+        />
+      </MapView>
+    );
+  };
 
-  // Native map component
-  const NativeMap = () => (
-    <MapView
-      style={styles.map}
-      initialRegion={{
-        latitude: driverLocation.latitude,
-        longitude: driverLocation.longitude,
-        latitudeDelta: 0.015,
-        longitudeDelta: 0.0121,
-      }}
-    >
-      {/* Driver marker */}
-      <Marker
-        coordinate={driverLocation}
-        title="Your Location"
-        description="You are here"
-      >
-        <View style={styles.driverMarker}>
-          <Ionicons name="bus" size={18} color="white" />
-        </View>
-      </Marker>
-      
-      {/* Route stops markers */}
-      {routes[selectedRoute].stops.map((stop, index) => {
-        const coordinate = routes[selectedRoute].coordinates[index];
-        return (
-          <Marker
-            key={index}
-            coordinate={coordinate}
-            title={stop.name}
-            description={`${stop.time} - ${stop.students} students`}
-          >
-            <View style={styles.stopMarker}>
-              <Ionicons name="location" size={18} color="white" />
-              <Text style={styles.markerCount}>{stop.students}</Text>
-            </View>
-          </Marker>
-        );
-      })}
-      
-      {/* Route line */}
-      <Polyline
-        coordinates={routes[selectedRoute].coordinates}
-        strokeWidth={4}
-        strokeColor="#4a80f5"
-      />
-    </MapView>
-  );
+  // If data is still loading, show a loading indicator
+  if (loading) {
+    return (
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <ActivityIndicator size="large" color="#34c759" />
+        <Text style={{marginTop: 15, fontSize: 16}}>Loading route...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -164,32 +174,22 @@ export default function DriverPage() {
         </TouchableOpacity>
       </View>
 
-      {/* Route Selection */}
-      <View style={styles.routeSelector}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {routes.map((route, index) => (
-            <TouchableOpacity
-              key={route.id}
-              style={[
-                styles.routeButton,
-                selectedRoute === index && styles.selectedRouteButton
-              ]}
-              onPress={() => setSelectedRoute(index)}
-            >
-              <Text style={[
-                styles.routeButtonText,
-                selectedRoute === index && styles.selectedRouteButtonText
-              ]}>
-                {route.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+      {/* Bus Info */}
+      {busInfo && (
+        <View style={styles.busInfo}>
+          <Text style={styles.busTitle}>{busInfo.name || "Campus Bus"}</Text>
+          <Text style={styles.busStatus}>Status: <Text style={{color: '#34c759'}}>{busInfo.status || "Active"}</Text></Text>
+        </View>
+      )}
 
       {/* Map View */}
       <View style={styles.mapContainer}>
-        {isNativePlatform ? <NativeMap /> : <WebMapPlaceholder />}
+        {isNativePlatform ? <NativeMap /> : (
+          <View style={styles.webMapPlaceholder}>
+            <Text style={styles.mapPlaceholder}>Driver Route Map (Web Version)</Text>
+            <Text style={styles.webMapNote}>Note: The interactive map is available on mobile devices.</Text>
+          </View>
+        )}
       </View>
 
       {/* Tabs */}
@@ -224,12 +224,12 @@ export default function DriverPage() {
 
       {/* Content based on selected tab */}
       <ScrollView style={styles.contentContainer}>
-        {currentTab === 'route' && (
+        {currentTab === 'route' && route && (
           <View style={styles.routeContent}>
-            <Text style={styles.routeTitle}>{routes[selectedRoute].name}</Text>
-            <Text style={styles.routeDescription}>{routes[selectedRoute].description}</Text>
+            <Text style={styles.routeTitle}>{route.name || "Campus Route"}</Text>
+            <Text style={styles.routeDescription}>{route.description}</Text>
 
-            {routes[selectedRoute].stops.map((stop, index) => (
+            {route.stops && route.stops.map((stop, index) => (
               <View key={index} style={styles.stopItem}>
                 <View style={styles.stopMarkerSmall}>
                   <Text style={styles.stopNumber}>{index + 1}</Text>
@@ -237,11 +237,11 @@ export default function DriverPage() {
                 <View style={styles.stopDetails}>
                   <Text style={styles.stopName}>{stop.name}</Text>
                   <Text style={styles.stopAddress}>{stop.address}</Text>
-                  <Text style={styles.stopTime}>{stop.time}</Text>
+                  <Text style={styles.stopTime}>{stop.scheduledTime}</Text>
                 </View>
                 <View style={styles.stopStudents}>
                   <Ionicons name="people" size={18} color="#4a80f5" />
-                  <Text style={styles.studentCount}>{stop.students}</Text>
+                  <Text style={styles.studentCount}>{stop.students || 0}</Text>
                 </View>
               </View>
             ))}
@@ -252,35 +252,68 @@ export default function DriverPage() {
           <View style={styles.studentsContent}>
             <Text style={styles.studentsTitle}>Confirmed Students</Text>
             <Text style={styles.studentsDescription}>Students who have confirmed their attendance</Text>
-
-            {routes[selectedRoute].stops.map((stop, index) => {
-              const stopStudents = getStudentsByStop(stop.name);
-              const confirmedStudents = stopStudents.filter(student => student.confirmed);
-              
-              if (confirmedStudents.length === 0) return null;
-              
-              return (
-                <View key={index} style={styles.stopStudentsSection}>
+            
+            {/* Debug info - helpful for development */}
+            <View style={{padding: 10, backgroundColor: '#f8f8f8', marginBottom: 10, borderRadius: 5}}>
+              <Text style={{fontSize: 12, color: '#666'}}>Bus ID: {busInfo?.id || 'None'}</Text>
+              <Text style={{fontSize: 12, color: '#666'}}>Students confirmed: {attendanceList.length}</Text>
+            </View>
+            
+            {loading ? (
+              <View style={{padding: 20, alignItems: 'center'}}>
+                <ActivityIndicator size="large" color="#34c759" />
+                <Text style={{marginTop: 10}}>Loading confirmed students...</Text>
+              </View>
+            ) : !busInfo ? (
+              <View style={{padding: 20, alignItems: 'center'}}>
+                <Text style={styles.noDataText}>No bus information available</Text>
+              </View>
+            ) : attendanceList.length === 0 ? (
+              <View style={{padding: 20, alignItems: 'center'}}>
+                <Ionicons name="people-outline" size={48} color="#ccc" />
+                <Text style={styles.noDataText}>No students have confirmed attendance yet</Text>
+                <Text style={{fontSize: 14, color: '#888', textAlign: 'center', marginTop: 8}}>
+                  When students confirm attendance, they'll appear here
+                </Text>
+              </View>
+            ) : (
+              // Group by pickup location
+              Object.entries(
+                attendanceList.reduce((grouped, attendance) => {
+                  // Make sure to handle undefined pickupLocation
+                  const location = attendance.pickupLocation || 'Unknown Location';
+                  if (!grouped[location]) grouped[location] = [];
+                  grouped[location].push(attendance);
+                  return grouped;
+                }, {})
+              ).map(([location, students]) => (
+                <View key={location} style={styles.stopStudentsSection}>
                   <View style={styles.stopHeaderRow}>
-                    <Text style={styles.stopHeaderTitle}>{stop.name}</Text>
-                    <Text style={styles.stopHeaderCount}>{confirmedStudents.length} students</Text>
+                    <Text style={styles.stopHeaderTitle}>{location}</Text>
+                    <Text style={styles.stopHeaderCount}>{students.length} students</Text>
                   </View>
-
-                  {confirmedStudents.map(student => (
+                  
+                  {students.map(student => (
                     <View key={student.id} style={styles.studentCard}>
                       <View style={styles.studentAvatar}>
                         <Ionicons name="person" size={24} color="#fff" />
                       </View>
                       <View style={styles.studentInfo}>
-                        <Text style={styles.studentName}>{student.name}</Text>
-                        <Text style={styles.studentId}>{student.studentId}</Text>
+                        <Text style={styles.studentName}>
+                          {student.displayName || `Student #${student.studentId}`}
+                        </Text>
+                        <Text style={styles.studentConfirmed}>
+                          {student.timestamp ? 
+                            `Confirmed at ${student.displayTime || new Date(student.timestamp.toDate()).toLocaleTimeString()}` : 
+                            'Recently confirmed'}
+                        </Text>
                       </View>
                       <Ionicons name="checkmark-circle" size={24} color="#34c759" />
                     </View>
                   ))}
                 </View>
-              );
-            })}
+              ))
+            )}
           </View>
         )}
       </ScrollView>
@@ -288,6 +321,7 @@ export default function DriverPage() {
   );
 }
 
+// Extend the styles to include busInfo
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -565,6 +599,71 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   studentId: {
+    fontSize: 14,
+    color: '#666',
+  },
+  studentConfirmed: {
+    fontSize: 14,
+    color: '#666',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  shuttleSelector: {
+    backgroundColor: '#f0f4f8',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+  },
+  shuttleSelectorLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
+  },
+  shuttleSelectorButtons: {
+    flexDirection: 'row',
+  },
+  shuttleSelectorButton: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  selectedShuttleButton: {
+    backgroundColor: '#34c759',
+  },
+  shuttleSelectorButtonText: {
+    color: '#333',
+    fontSize: 12,
+  },
+  selectedShuttleButtonText: {
+    color: 'white',
+  },
+  busInfo: {
+    backgroundColor: '#f0f8ff',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  busTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  busStatus: {
     fontSize: 14,
     color: '#666',
   },

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Platform, Switch, Modal, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
+import { getBusInfo, confirmAttendance, subscribeToBusLocation, getRoute } from '../services/shuttleService';
 
 // Conditionally import map components to avoid web errors
 let MapView, Marker, MapViewDirections, PROVIDER_GOOGLE;
@@ -25,52 +26,31 @@ export default function StudentPage() {
   const [sosMessage, setSosMessage] = useState('');
   const [sosLocation, setSosLocation] = useState('Share my current location');
   const [showAttendanceConfirmation, setShowAttendanceConfirmation] = useState(false);
-  const [selectedShuttle, setSelectedShuttle] = useState(null);
+  const [studentId, setStudentId] = useState('STU12345'); // This would come from authentication
+  const [busInfo, setBusInfo] = useState(null);
+  const [route, setRoute] = useState(null);
+  const [loading, setLoading] = useState(true);
   
   useEffect(() => {
     // Check if running on native platform
     setIsNativePlatform(Platform.OS !== 'web');
+    
+    // Load bus information and set up real-time listener
+    const unsubscribe = subscribeToBusLocation((bus) => {
+      setBusInfo(bus);
+      setLoading(false);
+    });
+    
+    // Load route information
+    getRoute().then(routeData => {
+      setRoute(routeData);
+    }).catch(error => {
+      console.error("Error loading route data:", error);
+    });
+    
+    // Clean up subscription when component unmounts
+    return () => unsubscribe();
   }, []);
-  
-  // Simulated shuttle data
-  const shuttles = [
-    { 
-      id: 1, 
-      name: 'Shuttle A', 
-      eta: '5 min', 
-      route: 'Main Campus → Dorms',
-      location: { latitude: 37.78825, longitude: -122.4324 },
-      schedule: [
-        { time: '7:30 AM', stop: 'Main Campus' },
-        { time: '7:45 AM', stop: 'Library' },
-        { time: '8:00 AM', stop: 'Dorms' }
-      ]
-    },
-    { 
-      id: 2, 
-      name: 'Shuttle B', 
-      eta: '12 min', 
-      route: 'Library → Sports Complex',
-      location: { latitude: 37.78625, longitude: -122.4344 },
-      schedule: [
-        { time: '8:00 AM', stop: 'Library' },
-        { time: '8:15 AM', stop: 'Student Center' },
-        { time: '8:30 AM', stop: 'Sports Complex' }
-      ]
-    },
-    { 
-      id: 3, 
-      name: 'Shuttle C', 
-      eta: '3 min', 
-      route: 'Student Center → Engineering Building',
-      location: { latitude: 37.78525, longitude: -122.4304 },
-      schedule: [
-        { time: '8:30 AM', stop: 'Student Center' },
-        { time: '8:45 AM', stop: 'Main Campus' },
-        { time: '9:00 AM', stop: 'Engineering Building' }
-      ]
-    },
-  ];
   
   // User's current location (simulated)
   const userLocation = { latitude: 37.7875, longitude: -122.4324 };
@@ -141,19 +121,18 @@ export default function StudentPage() {
         </View>
       </Marker>
       
-      {/* Shuttle markers */}
-      {shuttles.map(shuttle => (
+      {/* Bus marker - if we have bus info */}
+      {busInfo && busInfo.location && (
         <Marker
-          key={shuttle.id}
-          coordinate={shuttle.location}
-          title={shuttle.name}
-          description={`ETA: ${shuttle.eta}`}
+          coordinate={busInfo.location}
+          title={busInfo.name || "Campus Bus"}
+          description={`ETA: ${busInfo.eta || "5 min"}`}
         >
           <View style={styles.shuttleMarker}>
             <Ionicons name="bus" size={18} color="white" />
           </View>
         </Marker>
-      ))}
+      )}
       
       {/* Route from user to college */}
       <MapViewDirections
@@ -165,15 +144,17 @@ export default function StudentPage() {
         mode="WALKING"
       />
       
-      {/* Route from nearest shuttle to college */}
-      <MapViewDirections
-        origin={shuttles[2].location} // Shuttle C is closest (3 min ETA)
-        destination={collegeLocation}
-        apikey={GOOGLE_MAPS_APIKEY}
-        strokeWidth={4}
-        strokeColor="#ff9500"
-        mode="DRIVING"
-      />
+      {/* Route from bus to college */}
+      {busInfo && busInfo.location && (
+        <MapViewDirections
+          origin={busInfo.location}
+          destination={collegeLocation}
+          apikey={GOOGLE_MAPS_APIKEY}
+          strokeWidth={4}
+          strokeColor="#ff9500"
+          mode="DRIVING"
+        />
+      )}
     </MapView>
   );
 
@@ -190,15 +171,31 @@ export default function StudentPage() {
   };
 
   // Handle attendance confirmation
-  const confirmAttendance = (shuttle) => {
-    setSelectedShuttle(shuttle);
+  const handleConfirmAttendance = () => {
     setShowAttendanceConfirmation(true);
   };
 
   // Complete attendance confirmation
-  const completeAttendanceConfirmation = () => {
-    alert(`Attendance confirmed for ${selectedShuttle.name}. The driver has been notified.`);
-    setShowAttendanceConfirmation(false);
+  const completeAttendanceConfirmation = async () => {
+    try {
+      // Get the pickup location from route data
+      let pickupLocation = "Main Campus"; // Default fallback location
+      
+      if (route && route.stops && route.stops.length > 0) {
+        pickupLocation = route.stops[0].name;
+      }
+      
+      console.log(`Sending attendance confirmation - Student: ${studentId}, Location: ${pickupLocation}`);
+      
+      // Save attendance record to Firebase
+      await confirmAttendance(studentId, pickupLocation);
+      
+      alert(`Attendance confirmed for ${busInfo?.name || 'Campus Bus'}. The driver has been notified.`);
+      setShowAttendanceConfirmation(false);
+    } catch (error) {
+      console.error("Error confirming attendance:", error);
+      alert("There was an error confirming your attendance. Please try again.");
+    }
   };
 
   return (
@@ -229,26 +226,34 @@ export default function StudentPage() {
               </View>
             </View>
 
-            {/* Nearby Shuttles */}
+            {/* Campus Bus Section */}
             <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>Nearby Shuttles</Text>
-              {shuttles.map(shuttle => (
-                <View key={shuttle.id} style={styles.shuttleCard}>
+              <Text style={styles.sectionTitle}>Campus Bus</Text>
+              {loading ? (
+                <Text>Loading bus information...</Text>
+              ) : !busInfo ? (
+                <Text>No bus information available at this time.</Text>
+              ) : (
+                <View style={styles.shuttleCard}>
                   <View style={styles.shuttleInfo}>
-                    <Text style={styles.shuttleName}>{shuttle.name}</Text>
-                    <Text style={styles.shuttleRoute}>{shuttle.route}</Text>
+                    <Text style={styles.shuttleName}>{busInfo.name || "Campus Bus"}</Text>
+                    <Text style={styles.shuttleRoute}>
+                      {route?.description || "Campus Route"}
+                    </Text>
                   </View>
                   <View style={styles.shuttleEta}>
-                    <Text style={styles.etaText}>{shuttle.eta}</Text>
+                    <Text style={styles.etaText}>
+                      ~ {busInfo.eta || "5 min"}
+                    </Text>
                     <TouchableOpacity 
                       style={styles.confirmButton}
-                      onPress={() => confirmAttendance(shuttle)}
+                      onPress={handleConfirmAttendance}
                     >
                       <Text style={styles.confirmButtonText}>Confirm</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
-              ))}
+              )}
             </View>
 
             {/* Quick Actions */}
@@ -274,23 +279,23 @@ export default function StudentPage() {
         
         {currentTab === 'tracking' && (
           <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Shuttle Tracking</Text>
-            <Text style={styles.infoText}>Track shuttle locations in real-time</Text>
+            <Text style={styles.sectionTitle}>Bus Tracking</Text>
+            <Text style={styles.infoText}>Track the campus bus location in real-time</Text>
             
-            {/* Shuttle list for tracking view */}
-            {shuttles.map(shuttle => (
-              <View key={shuttle.id} style={styles.trackingCard}>
+            {/* Bus tracking view */}
+            {busInfo && (
+              <View style={styles.trackingCard}>
                 <View style={styles.trackingCardHeader}>
                   <View style={styles.shuttleIconContainer}>
                     <View style={styles.shuttleMarker}>
                       <Ionicons name="bus" size={18} color="white" />
                     </View>
                   </View>
-                  <Text style={styles.trackingCardTitle}>{shuttle.name}</Text>
-                  <Text style={styles.trackingCardEta}>{shuttle.eta}</Text>
+                  <Text style={styles.trackingCardTitle}>{busInfo.name || "Campus Bus"}</Text>
+                  <Text style={styles.trackingCardEta}>{busInfo.eta || "5 min"}</Text>
                 </View>
                 <View style={styles.trackingCardDetails}>
-                  <Text style={styles.trackingCardRoute}>{shuttle.route}</Text>
+                  <Text style={styles.trackingCardRoute}>{route?.description || "Campus Route"}</Text>
                   <View style={styles.trackingMetrics}>
                     <View style={styles.metricItem}>
                       <Ionicons name="people-outline" size={16} color="#666" />
@@ -303,32 +308,30 @@ export default function StudentPage() {
                   </View>
                 </View>
               </View>
-            ))}
+            )}
           </View>
         )}
         
         {currentTab === 'schedule' && (
           <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Shuttle Schedule</Text>
-            <Text style={styles.infoText}>View today's shuttle timings</Text>
+            <Text style={styles.sectionTitle}>Bus Schedule</Text>
+            <Text style={styles.infoText}>View today's bus timings</Text>
             
-            {/* Shuttle schedule tabs */}
-            <View style={styles.scheduleTabs}>
-              {shuttles.map(shuttle => (
-                <View key={shuttle.id} style={styles.scheduleCard}>
-                  <Text style={styles.scheduleCardTitle}>{shuttle.name}</Text>
-                  <Text style={styles.scheduleCardRoute}>{shuttle.route}</Text>
-                  
-                  {/* Schedule stops */}
-                  {shuttle.schedule.map((stop, index) => (
-                    <View key={index} style={styles.scheduleStop}>
-                      <Text style={styles.scheduleTime}>{stop.time}</Text>
-                      <Text style={styles.scheduleLocation}>{stop.stop}</Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
-            </View>
+            {/* Bus schedule */}
+            {route && (
+              <View style={styles.scheduleCard}>
+                <Text style={styles.scheduleCardTitle}>{busInfo?.name || "Campus Bus"}</Text>
+                <Text style={styles.scheduleCardRoute}>{route.description}</Text>
+                
+                {/* Schedule stops */}
+                {route.stops && route.stops.map((stop, index) => (
+                  <View key={index} style={styles.scheduleStop}>
+                    <Text style={styles.scheduleTime}>{stop.scheduledTime}</Text>
+                    <Text style={styles.scheduleLocation}>{stop.name}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         )}
         
@@ -503,21 +506,21 @@ export default function StudentPage() {
               </TouchableOpacity>
             </View>
             
-            {selectedShuttle && (
+            {busInfo && (
               <View style={styles.modalBody}>
                 <View style={styles.attendanceInfo}>
                   <View style={styles.shuttleIconLarge}>
                     <Ionicons name="bus" size={32} color="#fff" />
                   </View>
                   <View style={styles.attendanceDetails}>
-                    <Text style={styles.attendanceShuttleName}>{selectedShuttle.name}</Text>
-                    <Text style={styles.attendanceRoute}>{selectedShuttle.route}</Text>
-                    <Text style={styles.attendanceEta}>ETA: {selectedShuttle.eta}</Text>
+                    <Text style={styles.attendanceShuttleName}>{busInfo.name || "Campus Bus"}</Text>
+                    <Text style={styles.attendanceRoute}>{route?.description || "Campus Route"}</Text>
+                    <Text style={styles.attendanceEta}>ETA: {busInfo.eta || "5 min"}</Text>
                   </View>
                 </View>
                 
                 <Text style={styles.attendanceNote}>
-                  By confirming your attendance, you're letting the driver know you'll be boarding this shuttle.
+                  By confirming your attendance, you're letting the driver know you'll be boarding the bus.
                 </Text>
               </View>
             )}
