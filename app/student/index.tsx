@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, ActivityIndicator, Text } from 'react-native';
+import { View, ScrollView, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
 import { Platform } from 'react-native';
 
 // Import services
-import { getBusInfo, getRoute, confirmAttendance, subscribeToBusLocation } from '../../services/busService';
+import { getBusInfo, getRoute, subscribeToBusLocation } from '../../services/index';
 
 // Import components
 import StudentHeader from './components/StudentHeader';
@@ -17,9 +18,11 @@ import ProfileView from './components/ProfileView';
 import BottomNavigation from './components/BottomNavigation';
 import SOSModal from './components/SOSModal';
 import AttendanceModal from './components/AttendanceModal';
+import StudentSwitcher from './components/StudentSwitcher';
 
 // Import styles
 import { commonStyles } from '../../styles/commonStyles';
+import { studentStyles } from '../../styles/studentStyles';
 
 export default function StudentPage() {
   const router = useRouter();
@@ -32,6 +35,10 @@ export default function StudentPage() {
   const [busInfo, setBusInfo] = useState(null);
   const [route, setRoute] = useState(null);
   const [loading, setLoading] = useState(true);
+  // New state for student switcher
+  const [showStudentSwitcher, setShowStudentSwitcher] = useState(false);
+  // Track if user has confirmed attendance for any student
+  const [confirmedAttendance, setConfirmedAttendance] = useState({});
   
   useEffect(() => {
     // Check if running on native platform
@@ -75,6 +82,21 @@ export default function StudentPage() {
     setShowAttendanceConfirmation(true);
   };
 
+  // Handle student change
+  const handleStudentChange = (newStudentId, newStudentName) => {
+    setStudentId(newStudentId);
+    setStudentName(newStudentName);
+    console.log(`Switched to student: ${newStudentName} (${newStudentId})`);
+  };
+
+  // Track successful attendance confirmations
+  const handleAttendanceConfirmed = () => {
+    setConfirmedAttendance(prev => ({
+      ...prev,
+      [studentId]: true
+    }));
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -89,6 +111,25 @@ export default function StudentPage() {
     <View style={commonStyles.container}>
       {/* Header */}
       <StudentHeader router={router} />
+
+      {/* Student Switcher and Test Mode Bar */}
+      <View style={studentStyles.controlBar}>
+        {/* Test mode indicator */}
+        <View style={studentStyles.testModeIndicator}>
+          <Text style={studentStyles.testModeText}>TEST MODE</Text>
+        </View>
+
+        {/* Student Switcher Button */}
+        <TouchableOpacity 
+          style={studentStyles.studentSwitcherButton}
+          onPress={() => setShowStudentSwitcher(true)}
+        >
+          <Ionicons name="people" size={16} color="#4a80f5" />
+          <Text style={studentStyles.studentSwitcherText}>
+            {studentName} (Switch Student)
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Main Content */}
       <ScrollView style={commonStyles.contentContainer}>
@@ -109,6 +150,7 @@ export default function StudentPage() {
               busInfo={busInfo}
               route={route}
               handleConfirmAttendance={handleConfirmAttendance}
+              isAttendanceConfirmed={confirmedAttendance[studentId]}
             />
 
             {/* Quick Actions */}
@@ -146,6 +188,15 @@ export default function StudentPage() {
         route={route}
         studentId={studentId}
         studentName={studentName}
+        onAttendanceConfirmed={handleAttendanceConfirmed}
+      />
+
+      {/* Student Switcher Modal */}
+      <StudentSwitcher
+        visible={showStudentSwitcher}
+        setVisible={setShowStudentSwitcher}
+        currentStudentId={studentId}
+        onStudentChange={handleStudentChange}
       />
     </View>
   );

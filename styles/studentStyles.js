@@ -470,4 +470,114 @@ export const studentStyles = StyleSheet.create({
     color: '#666',
     marginVertical: 10,
   },
+  // Control bar for test mode and student switcher
+  controlBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    backgroundColor: '#f0f4f8',
+    marginBottom: 5,
+  },
+  testModeIndicator: {
+    backgroundColor: 'rgba(255, 149, 0, 0.8)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  testModeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  studentSwitcherButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    elevation: 1,
+  },
+  studentSwitcherText: {
+    fontSize: 14,
+    color: '#4a80f5',
+    marginLeft: 5,
+  },
+  // Student switcher modal styles
+  studentSwitcherItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+  },
+  studentSwitcherItemActive: {
+    backgroundColor: '#f0f4f8',
+  },
+  studentSwitcherAvatar: {
+    width: 45,
+    height: 45,
+    borderRadius: 25,
+    backgroundColor: '#ddd',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  studentSwitcherInitial: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#666',
+  },
+  studentSwitcherInfo: {
+    flex: 1,
+  },
+  studentSwitcherName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  studentSwitcherNameActive: {
+    color: '#4a80f5',
+    fontWeight: 'bold',
+  },
+  studentSwitcherId: {
+    fontSize: 13,
+    color: '#666',
+  },
+  studentSwitcherLocation: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 2,
+  },
+  studentSwitcherCheck: {
+    marginLeft: 10,
+  },
+  studentSwitcherSeparator: {
+    height: 1,
+    backgroundColor: '#efefef',
+    marginVertical: 5,
+  },
+  // Attendance confirmed badge
+  attendanceBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: '#34c759',
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  attendanceBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginLeft: 3,
+  },
 });

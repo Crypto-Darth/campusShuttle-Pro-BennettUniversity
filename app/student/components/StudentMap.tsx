@@ -1,21 +1,19 @@
-import React from 'react';
-import { View, Text, Dimensions, TouchableOpacity, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { studentStyles } from '../../../styles/studentStyles';
+import { GOOGLE_MAPS_API_KEY } from '@env';
 
 // Conditionally import map components to avoid web errors
-let MapView, Marker, MapViewDirections, PROVIDER_GOOGLE;
+let MapView, Marker, Polyline, UrlTile;
 if (Platform.OS !== 'web') {
   // Only import on native platforms
   const MapComponents = require('react-native-maps');
   MapView = MapComponents.default;
   Marker = MapComponents.Marker;
-  PROVIDER_GOOGLE = MapComponents.PROVIDER_GOOGLE;
-  MapViewDirections = require('react-native-maps-directions').default;
+  Polyline = MapComponents.Polyline;
+  UrlTile = MapComponents.UrlTile;
 }
-
-// API key for Google Maps directions
-const GOOGLE_MAPS_APIKEY = 'AIzaSyB2wxa1MLXzINy1cneQ7mWbeLr6It1WY0o';
 
 // Web version of map (for browsers)
 const WebMapPlaceholder = () => (
@@ -47,75 +45,79 @@ const WebMapPlaceholder = () => (
   </View>
 );
 
-// Native map component for mobile devices
-const NativeMapView = ({ userLocation, bennettLocation, busInfo }) => (
-  <MapView
-    style={studentStyles.map}
-    initialRegion={{
-      latitude: userLocation.latitude,
-      longitude: userLocation.longitude,
-      latitudeDelta: 0.015,
-      longitudeDelta: 0.0121,
-    }}
-  >
-    {/* User marker */}
-    <Marker
-      coordinate={userLocation}
-      title="You are here"
-      description="Your current location"
+// Native map component for mobile devices with OpenStreetMap
+const NativeMapView = ({ userLocation, bennettLocation, busInfo }) => {
+  return (
+    <MapView
+      style={studentStyles.map}
+      initialRegion={{
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: 0.015,
+        longitudeDelta: 0.0121,
+      }}
+      mapType="none"
     >
-      <View style={studentStyles.userMarker}>
-        <Ionicons name="person" size={18} color="white" />
-      </View>
-    </Marker>
-    
-    {/* College marker */}
-    <Marker
-      coordinate={bennettLocation}
-      title="Bennett University"
-      description="Your destination"
-    >
-      <View style={studentStyles.collegeMarker}>
-        <Ionicons name="school" size={18} color="white" />
-      </View>
-    </Marker>
-    
-    {/* Bus marker - if we have bus info */}
-    {busInfo && busInfo.location && (
+      {/* OpenStreetMap Tiles */}
+      <UrlTile
+        urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        zIndex={-1}
+      />
+      
+      {/* User marker */}
       <Marker
-        coordinate={busInfo.location}
-        title={busInfo.name || "Campus Bus"}
-        description={`ETA: ${busInfo.eta || "5 min"}`}
+        coordinate={userLocation}
+        title="You are here"
+        description="Your current location"
       >
-        <View style={studentStyles.shuttleMarker}>
-          <Ionicons name="bus" size={18} color="white" />
+        <View style={studentStyles.userMarker}>
+          <Ionicons name="person" size={18} color="white" />
         </View>
       </Marker>
-    )}
-    
-    {/* Route from user to college */}
-    <MapViewDirections
-      origin={userLocation}
-      destination={bennettLocation}
-      apikey={GOOGLE_MAPS_APIKEY}
-      strokeWidth={3}
-      strokeColor="#4a80f5"
-      mode="WALKING"
-    />
-    
-    {/* Route from bus to college */}
-    {busInfo && busInfo.location && (
-      <MapViewDirections
-        origin={busInfo.location}
-        destination={bennettLocation}
-        apikey={GOOGLE_MAPS_APIKEY}
-        strokeWidth={4}
-        strokeColor="#ff9500"
-        mode="DRIVING"
+      
+      {/* College marker */}
+      <Marker
+        coordinate={bennettLocation}
+        title="Bennett University"
+        description="Your destination"
+      >
+        <View style={studentStyles.collegeMarker}>
+          <Ionicons name="school" size={18} color="white" />
+        </View>
+      </Marker>
+      
+      {/* Bus marker - if we have bus info */}
+      {busInfo && busInfo.location && (
+        <Marker
+          coordinate={busInfo.location}
+          title={busInfo.name || "Campus Bus"}
+          description={`ETA: ${busInfo.eta || "5 min"}`}
+        >
+          <View style={studentStyles.shuttleMarker}>
+            <Ionicons name="bus" size={18} color="white" />
+          </View>
+        </Marker>
+      )}
+      
+      {/* Route from user to college - simple straight line */}
+      <Polyline
+        coordinates={[userLocation, bennettLocation]}
+        strokeWidth={3}
+        strokeColor="#4a80f5"
+        lineDashPattern={[5, 5]}
       />
-    )}
-  </MapView>
-);
+      
+      {/* Route from bus to college - if bus info is available */}
+      {busInfo && busInfo.location && (
+        <Polyline
+          coordinates={[busInfo.location, bennettLocation]}
+          strokeWidth={4}
+          strokeColor="#ff9500"
+        />
+      )}
+    </MapView>
+  );
+};
 
 const StudentMap = ({ isNativePlatform, userLocation, bennettLocation, busInfo, handleSOS }) => {
   return (

@@ -1,7 +1,3 @@
-import React, { useState, useEffect } from 'react';
-import { Text, View, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Platform, Switch, Modal, TextInput } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from "expo-router";
 import { 
   collection, 
   addDoc, 
@@ -21,10 +17,10 @@ import { db } from '../firebase';
 import { formatTimestamp } from './utils/dateUtils';
 
 // Collection references
-const busCollection = collection(db, 'buses');
-const routeCollection = collection(db, 'routes');
-const studentsCollection = collection(db, 'students');
-const attendanceCollection = collection(db, 'attendance');
+export const busCollection = collection(db, 'buses');
+export const routeCollection = collection(db, 'routes');
+export const studentsCollection = collection(db, 'students');
+export const attendanceCollection = collection(db, 'attendance');
 
 // Initialization function
 export const initializeDatabase = async () => {
@@ -292,13 +288,5 @@ const seedInitialDataIfEmpty = async () => {
   }
 };
 
-// Export collection references for use in other service files
-export { busCollection, routeCollection, studentsCollection, attendanceCollection };
-
 // Export debug function
 export { debugAttendanceData } from './attendanceService';
-
-// Re-export all service functions 
-export * from './busService';
-export * from './routeService';
-export * from './attendanceService';

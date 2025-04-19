@@ -2,9 +2,17 @@ import React from 'react';
 import { View, Text, Modal, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { studentStyles } from '../../../styles/studentStyles';
-import { confirmAttendance } from '../../../services/busService';
+import { confirmAttendance } from '../../../services/index';
 
-const AttendanceModal = ({ visible, setVisible, busInfo, route, studentId, studentName }) => {
+const AttendanceModal = ({ 
+  visible, 
+  setVisible, 
+  busInfo, 
+  route, 
+  studentId, 
+  studentName,
+  onAttendanceConfirmed 
+}) => {
   // Complete attendance confirmation
   const completeAttendanceConfirmation = async () => {
     try {
@@ -22,6 +30,11 @@ const AttendanceModal = ({ visible, setVisible, busInfo, route, studentId, stude
       
       alert(`Attendance confirmed for ${busInfo?.name || 'Campus Bus'}. The driver has been notified.`);
       setVisible(false);
+      
+      // Call the callback to update attendance status
+      if (onAttendanceConfirmed) {
+        onAttendanceConfirmed();
+      }
     } catch (error) {
       console.error("Error confirming attendance:", error);
       alert("There was an error confirming your attendance. Please try again.");
@@ -51,9 +64,15 @@ const AttendanceModal = ({ visible, setVisible, busInfo, route, studentId, stude
                   <Ionicons name="bus" size={32} color="#fff" />
                 </View>
                 <View style={studentStyles.attendanceDetails}>
-                  <Text style={studentStyles.attendanceShuttleName}>{busInfo.name || "Campus Bus"}</Text>
-                  <Text style={studentStyles.attendanceRoute}>{route?.description || "Campus Route"}</Text>
-                  <Text style={studentStyles.attendanceEta}>ETA: {busInfo.eta || "5 min"}</Text>
+                  <Text style={studentStyles.attendanceBusName || studentStyles.attendanceShuttleName}>
+                    {busInfo.name || "Campus Bus"}
+                  </Text>
+                  <Text style={studentStyles.attendanceRoute}>
+                    {route?.description || "Campus Route"}
+                  </Text>
+                  <Text style={studentStyles.attendanceEta}>
+                    ETA: {busInfo.eta || "5 min"}
+                  </Text>
                 </View>
               </View>
               
