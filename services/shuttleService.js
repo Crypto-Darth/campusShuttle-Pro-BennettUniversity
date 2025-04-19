@@ -17,10 +17,26 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
-// REMOVE THESE PROBLEMATIC IMPORTS - they create a circular reference
-// import { getBusInfo, confirmAttendance, subscribeToBusLocation, getRoute } from '../services/shuttleService';
+// Utils
+import { formatTimestamp } from './utils/dateUtils';
 
-// Add this initialization check at the beginning of the file
+// Collection references
+const busCollection = collection(db, 'buses');
+const routeCollection = collection(db, 'routes');
+const studentsCollection = collection(db, 'students');
+const attendanceCollection = collection(db, 'attendance');
+
+// Initialization function
+export const initializeDatabase = async () => {
+  try {
+    await ensureCollectionsExist();
+    await seedInitialDataIfEmpty();
+    return true;
+  } catch (error) {
+    console.error("Error initializing database:", error);
+    return false;
+  }
+};
 
 // Check if collections exist and create them if needed
 const ensureCollectionsExist = async () => {
@@ -34,7 +50,7 @@ const ensureCollectionsExist = async () => {
       console.log("Creating test attendance document to ensure collection exists");
       await addDoc(attendanceCollection, {
         studentId: 'test-student',
-        shuttleId: 'test-shuttle',
+        busId: 'test-bus',
         pickupLocation: 'Test Location',
         status: 'test',
         timestamp: serverTimestamp(),
@@ -47,320 +63,242 @@ const ensureCollectionsExist = async () => {
   }
 };
 
-// Call this function early in the app lifecycle
-ensureCollectionsExist();
-
-/**
- * Safely format a Firestore timestamp
- */
-function formatTimestamp(timestamp) {
-  if (!timestamp) return 'Unknown time';
-  
+// Seed initial data if collections are empty
+const seedInitialDataIfEmpty = async () => {
   try {
-    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
-      return new Date(timestamp.toDate()).toLocaleTimeString();
-    } else if (timestamp instanceof Date) {
-      return timestamp.toLocaleTimeString();
-    } else if (typeof timestamp === 'string') {
-      return new Date(timestamp).toLocaleTimeString();
-    }
-    return 'Invalid timestamp';
-  } catch (error) {
-    console.error('Error formatting timestamp:', error);
-    return 'Invalid timestamp';
-  }
-}
-
-// Collection references
-const busCollection = collection(db, 'bus');
-const routeCollection = collection(db, 'route');
-const studentsCollection = collection(db, 'students');
-const attendanceCollection = collection(db, 'attendance');
-
-// ===== BUS FUNCTIONS =====
-
-/**
- * Get the bus info
- */
-export const getBusInfo = async () => {
-  try {
-    const snapshot = await getDocs(busCollection);
-    if (snapshot.docs.length > 0) {
-      // Return the first (and only) bus
-      return {
-        id: snapshot.docs[0].id,
-        ...snapshot.docs[0].data()
-      };
-    }
-    // If no bus found, return mock data
-    return getMockBus();
-  } catch (error) {
-    console.error("Error getting bus info:", error);
-    // Return mock data if Firebase fails
-    return getMockBus();
-  }
-};
-
-/**
- * Subscribe to bus location updates
- */
-export const subscribeToBusLocation = (callback) => {
-  try {
-    return onSnapshot(busCollection, (snapshot) => {
-      if (snapshot.docs.length > 0) {
-        callback({
-          id: snapshot.docs[0].id,
-          ...snapshot.docs[0].data()
-        });
-      } else {
-        // If no bus in database, use mock data
-        callback(getMockBus());
-      }
-    }, error => {
-      console.error("Error subscribing to bus:", error);
-      // Fall back to mock data on error
-      callback(getMockBus());
-    });
-  } catch (error) {
-    console.error("Error setting up bus subscription:", error);
-    // Return a dummy unsubscribe function
-    callback(getMockBus());
-    return () => {};
-  }
-};
-
-/**
- * Update bus location (for driver)
- */
-export const updateBusLocation = async (busId, location) => {
-  try {
-    // Don't proceed if no bus ID is provided
-    if (!busId) {
-      console.log('No bus ID provided for location update');
+    // Check if we have buses
+    const busesSnapshot = await getDocs(busCollection);
+    if (busesSnapshot.docs.length > 0) {
+      console.log("Buses already exist, skipping initialization");
       return;
     }
     
-    const busRef = doc(db, 'bus', busId);
-    const busSnapshot = await getDoc(busRef);
+    console.log("No buses found, initializing default data...");
     
-    if (!busSnapshot.exists()) {
-      console.log(`Bus ${busId} doesn't exist in Firebase`);
-      
-      // Create the bus if it doesn't exist
-      await setDoc(busRef, {
-        name: 'Campus Bus',
+    // Add the Greater Noida routes
+    const routes = [
+      {
+        name: 'Route A - Bennett Main Route',
+        description: 'Alpha 1 → Beta 1 → Bennett University',
+        stops: [
+          {
+            name: 'Alpha 1',
+            address: 'Alpha 1, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4669,
+              longitude: 77.5128
+            },
+            scheduledTime: '7:30 AM',
+            students: 3
+          },
+          {
+            name: 'Beta 1',
+            address: 'Beta 1, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4808,
+              longitude: 77.5087
+            },
+            scheduledTime: '7:45 AM',
+            students: 4
+          },
+          {
+            name: 'Bennett University',
+            address: 'Bennett University, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4501,
+              longitude: 77.5859
+            },
+            scheduledTime: '8:15 AM',
+            students: 0
+          }
+        ],
+        coordinates: [
+          { latitude: 28.4669, longitude: 77.5128 },
+          { latitude: 28.4808, longitude: 77.5087 },
+          { latitude: 28.4501, longitude: 77.5859 }
+        ],
+        estimatedDuration: 45 // minutes
+      },
+      {
+        name: 'Route B - Bennett Pari Chowk Route',
+        description: 'Pari Chowk → Knowledge Park → Bennett University',
+        stops: [
+          {
+            name: 'Pari Chowk',
+            address: 'Pari Chowk, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4701,
+              longitude: 77.5027
+            },
+            scheduledTime: '7:30 AM',
+            students: 2
+          },
+          {
+            name: 'Knowledge Park',
+            address: 'Knowledge Park, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4741,
+              longitude: 77.4949
+            },
+            scheduledTime: '7:50 AM',
+            students: 2
+          },
+          {
+            name: 'Bennett University',
+            address: 'Bennett University, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4501,
+              longitude: 77.5859
+            },
+            scheduledTime: '8:20 AM',
+            students: 0
+          }
+        ],
+        coordinates: [
+          { latitude: 28.4701, longitude: 77.5027 },
+          { latitude: 28.4741, longitude: 77.4949 },
+          { latitude: 28.4501, longitude: 77.5859 }
+        ],
+        estimatedDuration: 50 // minutes
+      },
+      {
+        name: 'Route C - Bennett Gamma Route',
+        description: 'Gamma I → Gamma II → Bennett University',
+        stops: [
+          {
+            name: 'Gamma I',
+            address: 'Gamma I, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4874,
+              longitude: 77.5063
+            },
+            scheduledTime: '7:20 AM',
+            students: 1
+          },
+          {
+            name: 'Gamma II',
+            address: 'Gamma II, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4907,
+              longitude: 77.5025
+            },
+            scheduledTime: '7:40 AM',
+            students: 1
+          },
+          {
+            name: 'Bennett University',
+            address: 'Bennett University, Greater Noida, UP, India',
+            location: {
+              latitude: 28.4501,
+              longitude: 77.5859
+            },
+            scheduledTime: '8:10 AM',
+            students: 0
+          }
+        ],
+        coordinates: [
+          { latitude: 28.4874, longitude: 77.5063 },
+          { latitude: 28.4907, longitude: 77.5025 },
+          { latitude: 28.4501, longitude: 77.5859 }
+        ],
+        estimatedDuration: 50 // minutes
+      }
+    ];
+    
+    // Add routes to database
+    const routeRefs = [];
+    for (const route of routes) {
+      const docRef = await addDoc(routeCollection, route);
+      routeRefs.push({ id: docRef.id, ...route });
+      console.log(`Added route with ID: ${docRef.id}`);
+    }
+    
+    // Add the buses
+    const buses = [
+      {
+        name: 'Bus Alpha',
         driverId: 'driver1',
+        routeId: routeRefs[0].id,
         capacity: 20,
-        location: location,
+        location: routeRefs[0].stops[0].location,
         status: 'active',
-        lastUpdated: serverTimestamp()
-      });
-      console.log(`Created new bus with ID: ${busId}`);
-      return;
-    }
-    
-    // Update existing bus
-    await updateDoc(busRef, {
-      location,
-      lastUpdated: serverTimestamp()
-    });
-    console.log(`Updated location for bus ${busId}`);
-  } catch (error) {
-    console.error("Error updating bus location:", error);
-  }
-};
-
-// ===== ROUTE FUNCTIONS =====
-
-/**
- * Get the route info
- */
-export const getRoute = async () => {
-  try {
-    const snapshot = await getDocs(routeCollection);
-    if (snapshot.docs.length > 0) {
-      // Return the first (and only) route
-      return {
-        id: snapshot.docs[0].id,
-        ...snapshot.docs[0].data()
-      };
-    }
-    // If no route found, return mock data
-    return getMockRoute();
-  } catch (error) {
-    console.error("Error getting route:", error);
-    // Return mock data if Firebase fails
-    return getMockRoute();
-  }
-};
-
-// ===== ATTENDANCE FUNCTIONS =====
-
-/**
- * Confirm student attendance for the bus
- */
-export const confirmAttendance = async (studentId, pickupLocation) => {
-  try {
-    console.log(`Confirming attendance: studentId=${studentId}, pickupLocation=${pickupLocation}`);
-    
-    // Get the bus ID
-    let busId = 'bus1'; // Default ID
-    try {
-      const bus = await getBusInfo();
-      if (bus && bus.id) {
-        busId = bus.id;
-      }
-    } catch (error) {
-      console.error("Error getting bus ID:", error);
-    }
-    
-    // Create a proper attendance record with all required fields
-    const attendanceData = {
-      studentId,
-      busId,
-      pickupLocation,
-      status: 'confirmed',
-      timestamp: serverTimestamp(),
-      displayName: `Student ${studentId}`,
-      createdAt: new Date().toISOString()
-    };
-    
-    console.log("Adding attendance record with data:", JSON.stringify(attendanceData));
-    
-    // Add the attendance record to Firestore
-    const docRef = await addDoc(attendanceCollection, attendanceData);
-    console.log(`Successfully added attendance record with ID: ${docRef.id}`);
-    
-    return docRef;
-  } catch (error) {
-    console.error("Error confirming attendance:", error);
-    throw error;
-  }
-};
-
-/**
- * Subscribe to attendance changes (for the driver)
- */
-export const subscribeToAttendance = (callback) => {
-  try {
-    console.log(`Setting up attendance subscription`);
-    
-    // Create a query to get all attendance records sorted by timestamp
-    const q = query(attendanceCollection);
-    
-    // Listen for real-time updates
-    return onSnapshot(q, (snapshot) => {
-      // Process the snapshot
-      const attendanceList = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          // Handle the timestamp display safely
-          displayTime: data.timestamp ? formatTimestamp(data.timestamp) : new Date().toLocaleTimeString()
-        };
-      });
-      
-      console.log(`Received ${attendanceList.length} attendance records`);
-      
-      // Send the attendance records to the callback
-      callback(attendanceList);
-    }, error => {
-      console.error(`Error in attendance subscription:`, error);
-      callback([]);
-    });
-  } catch (error) {
-    console.error("Error setting up attendance subscription:", error);
-    callback([]);
-    return () => {};
-  }
-};
-
-// ===== MOCK DATA FUNCTIONS =====
-
-/**
- * Get mock bus data for development/fallback
- */
-function getMockBus() {
-  return { 
-    id: "bus1", 
-    name: 'Campus Bus', 
-    driverId: 'driver1',
-    capacity: 20,
-    location: { latitude: 37.78825, longitude: -122.4324 },
-    status: 'active',
-    eta: '5 min'
-  };
-}
-
-/**
- * Get mock route for development/fallback
- */
-function getMockRoute() {
-  return {
-    id: "route1",
-    name: 'Campus Route',
-    description: 'Main Campus → Dorms → Library',
-    stops: [
-      {
-        name: 'Main Campus',
-        address: '123 University Ave',
-        location: {
-          latitude: 37.78825,
-          longitude: -122.4324
-        },
-        scheduledTime: '7:30 AM',
-        students: 4
+        eta: '45 min'
       },
       {
-        name: 'Dorms',
-        address: '789 Residence Rd',
-        location: {
-          latitude: 37.78425,
-          longitude: -122.4354
-        },
-        scheduledTime: '7:45 AM',
-        students: 2
+        name: 'Bus Beta',
+        driverId: 'driver2',
+        routeId: routeRefs[1].id,
+        capacity: 18,
+        location: routeRefs[1].stops[0].location,
+        status: 'active',
+        eta: '50 min'
       },
       {
-        name: 'Library',
-        address: '456 Book St',
-        location: {
-          latitude: 37.78625,
-          longitude: -122.4344
-        },
-        scheduledTime: '8:00 AM',
-        students: 3
+        name: 'Bus Gamma',
+        driverId: 'driver3',
+        routeId: routeRefs[2].id,
+        capacity: 22,
+        location: routeRefs[2].stops[0].location,
+        status: 'active',
+        eta: '50 min'
       }
-    ],
-    coordinates: [
-      { latitude: 37.78825, longitude: -122.4324 },
-      { latitude: 37.78425, longitude: -122.4354 },
-      { latitude: 37.78625, longitude: -122.4344 }
-    ],
-    estimatedDuration: 30 // minutes
-  };
-}
-
-/**
- * Utility function to verify attendance records and troubleshoot issues
- */
-export const debugAttendanceData = async () => {
-  try {
-    console.log(`DEBUG: Checking attendance data`);
+    ];
     
-    // Check all attendance records
-    const allAttendance = await getDocs(attendanceCollection);
-    console.log(`DEBUG: Total attendance records in database: ${allAttendance.size}`);
+    // Add buses to database
+    for (const bus of buses) {
+      const docRef = await addDoc(busCollection, bus);
+      console.log(`Added bus with ID: ${docRef.id}`);
+    }
     
-    // Log all attendance documents
-    allAttendance.forEach(doc => {
-      console.log(`DEBUG: Record ${doc.id}:`, JSON.stringify(doc.data()));
-    });
+    // Add students
+    const students = [
+      {
+        studentId: 'E22CSEU0001',
+        name: 'Aditya Banerjee',
+        email: 'aditya.banerjee@bennett.edu.in',
+        preferredPickupLocation: 'Alpha 1'
+      },
+      {
+        studentId: 'E22CSEU0002',
+        name: 'Kshitiz Yadav',
+        email: 'kshitiz.yadav@bennett.edu.in',
+        preferredPickupLocation: 'Pari Chowk'
+      },
+      {
+        studentId: 'E22CSEU0003',
+        name: 'Sneyank Das',
+        email: 'sneyank.das@bennett.edu.in',
+        preferredPickupLocation: 'Gamma I'
+      },
+      {
+        studentId: 'E22CSEU0004',
+        name: 'Samir Chowdhary',
+        email: 'samir.chowdhary@bennett.edu.in',
+        preferredPickupLocation: 'Beta 1'
+      }
+    ];
     
+    // Add students to database
+    for (const student of students) {
+      const docRef = await addDoc(studentsCollection, student);
+      console.log(`Added student with ID: ${docRef.id}`);
+    }
+    
+    console.log('Database initialized successfully with Bennett University routes');
     return true;
   } catch (error) {
-    console.error("DEBUG: Error checking attendance data:", error);
+    console.error("Error initializing data:", error);
     return false;
   }
 };
+
+// Export collection references for use in other service files
+export { busCollection, routeCollection, studentsCollection, attendanceCollection };
+
+// Export debug function
+export { debugAttendanceData } from './attendanceService';
+
+// Re-export all service functions 
+export * from './busService';
+export * from './routeService';
+export * from './attendanceService';
